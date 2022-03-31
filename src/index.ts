@@ -22,7 +22,7 @@ type AadJwtResponse = JwtResponse<AadTokenBodyClaims>;
 type ValidatedCallback = (payload: AadJwtResponse, req: Request, res: Response) => void;
 
 type JwtEvents = {
-	validated: (payload: AadJwtResponse, req: Request, res: Response) => void;
+	validated: (payload: AadJwtResponse, req: Request | undefined, res: Response | undefined) => void;
 };
 
 type JwtVerifyOptions = JwtVerifyRoleOptions | JwtVerifyGroupsOptions;
@@ -67,7 +67,7 @@ export class JwtMiddleware extends (EventEmitter as new () => TypedEmitter<JwtEv
 	 *   // handle validation failed
 	 * }
 	 */
-	public async verifyToken<T = AadTokenBodyClaims>(token: string, verifyOptions?: JwtVerifyOptions): Promise<JwtResponse<T & object>> {
+	public async verifyToken<T = AadTokenBodyClaims>(token: string, verifyOptions?: JwtVerifyOptions, req?: Request, res?: Response): Promise<JwtResponse<T & object>> {
 		const payload = await jwtVerify<T & object>(token, this.options);
 		if (isRoleOptions(verifyOptions) && !this.haveRole(verifyOptions, payload)) {
 			this.logger?.info(payload.body, 'not match with roles', verifyOptions.roles);
@@ -77,6 +77,7 @@ export class JwtMiddleware extends (EventEmitter as new () => TypedEmitter<JwtEv
 			this.logger?.info(payload.body, 'not match with groups', verifyOptions.groups);
 			throw new JwtGroupError('no matching group');
 		}
+		this.emit('validated', payload, req, res);
 		return payload;
 	}
 	/**
