@@ -43,6 +43,7 @@ export class JwtMiddleware extends (EventEmitter as new () => TypedEmitter<JwtEv
 	public constructor(options: VerifyOptions = {}, logger?: LoggerLike) {
 		super();
 		this.options = options;
+		this.logger = logger;
 	}
 	public onRoleError(callback: ErrorCallbackType) {
 		this.roleErrorCallback = callback;
