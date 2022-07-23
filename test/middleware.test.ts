@@ -26,7 +26,9 @@ describe('aadMiddleware', () => {
 	before(async function () {
 		this.timeout(30000);
 		useCache(new FileCertCache({fileName: '.certCache.json', pretty: true}));
-		jwt = new JwtMiddleware({issuer: `https://sts.windows.net/${process.env.AZURE_TENANT_ID}/`, audience: `${process.env.AZURE_API_AUDIENCE}`});
+		jwt = new JwtMiddleware(() =>
+			Promise.resolve({issuer: `https://sts.windows.net/${process.env.AZURE_TENANT_ID}/`, audience: `${process.env.AZURE_API_AUDIENCE}`}),
+		);
 		const app = await startExpress(port);
 		if (!process.env.VALID_ROLE) {
 			throw new Error('no VALID_ROLE set');

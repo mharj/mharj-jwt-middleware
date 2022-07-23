@@ -27,6 +27,8 @@ type JwtEvents = {
 
 type JwtVerifyOptions = JwtVerifyRoleOptions | JwtVerifyGroupsOptions;
 
+type JwtMiddlewareOptions = VerifyOptions | (() => Promise<VerifyOptions>);
+
 /**
  * @example
  * const jwt = new JwtMiddleware({
@@ -35,12 +37,12 @@ type JwtVerifyOptions = JwtVerifyRoleOptions | JwtVerifyGroupsOptions;
  * });
  */
 export class JwtMiddleware extends (EventEmitter as new () => TypedEmitter<JwtEvents>) {
-	private options: VerifyOptions;
+	private options: JwtMiddlewareOptions;
 	private roleErrorCallback: ErrorCallbackType | undefined;
 	private groupErrorCallback: ErrorCallbackType | undefined;
 	private validatedCallback: ValidatedCallback | undefined;
 	private logger: LoggerLike | undefined;
-	public constructor(options: VerifyOptions = {}, logger?: LoggerLike) {
+	public constructor(options: JwtMiddlewareOptions = {}, logger?: LoggerLike) {
 		super();
 		this.options = options;
 		this.logger = logger;
@@ -67,8 +69,14 @@ export class JwtMiddleware extends (EventEmitter as new () => TypedEmitter<JwtEv
 	 *   // handle validation failed
 	 * }
 	 */
-	public async verifyToken<T = AadTokenBodyClaims>(token: string, verifyOptions?: JwtVerifyOptions, req?: Request, res?: Response): Promise<JwtResponse<T & object>> {
-		const payload = await jwtVerify<T & object>(token, this.options);
+	public async verifyToken<T = AadTokenBodyClaims>(
+		token: string,
+		verifyOptions?: JwtVerifyOptions,
+		req?: Request,
+		res?: Response,
+	): Promise<JwtResponse<T & object>> {
+		const options = await this.getOptions();
+		const payload = await jwtVerify<T & object>(token, options);
 		if (isRoleOptions(verifyOptions) && !this.haveRole(verifyOptions, payload)) {
 			this.logger?.info(payload.body, 'not match with roles', verifyOptions.roles);
 			throw new JwtRoleError('no matching role');
@@ -95,7 +103,8 @@ export class JwtMiddleware extends (EventEmitter as new () => TypedEmitter<JwtEv
 				if (!req.headers.authorization) {
 					throw new JwtHeaderError('no authorization header');
 				}
-				const payload = await jwtVerify<AadTokenBodyClaims>(req.headers.authorization, this.options);
+				const options = await this.getOptions();
+				const payload = await jwtVerify<AadTokenBodyClaims>(req.headers.authorization, options);
 				if (isRoleOptions(verifyOptions)) {
 					if (this.haveRole(verifyOptions, payload)) {
 						this.handleValidLogin(payload, req, res);
@@ -149,5 +158,11 @@ export class JwtMiddleware extends (EventEmitter as new () => TypedEmitter<JwtEv
 			this.validatedCallback(payload, req, res);
 		}
 		this.emit('validated', payload, req, res);
+	}
+	private getOptions(): Promise<VerifyOptions> {
+		if (typeof this.options === 'function') {
+			return this.options();
+		}
+		return Promise.resolve(this.options);
 	}
 }

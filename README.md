@@ -18,6 +18,15 @@ const jwt = new JwtMiddleware(
 	optionalLogger,
 );
 
+// or have validation options as async function
+async function buildOptions(): Promise<VerifyOptions> {
+	return {
+		issuer: `https://sts.windows.net/${await getIssuer()}/`,
+		audience: await getAudience(),
+	}
+}
+const jwt = new JwtMiddleware(buildOptions, optionalLogger);
+
 // (optional) if need cert cache support for restarts
 useCache(new FileCertCache());
 ```
