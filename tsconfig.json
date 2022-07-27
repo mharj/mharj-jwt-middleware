@@ -1,8 +1,8 @@
 {
 	"compilerOptions": {
 	  "module": "commonjs",
-	  "target": "es6",
-	  "lib": ["es2017", "dom"],
+	  "target": "ES2020",
+	  "lib": ["ES2020", "dom"],
 	  "rootDir": "./src",
 	  "outDir": "./dist",
 	  "moduleResolution": "node",
@@ -20,6 +20,7 @@
 	  "strictNullChecks": true,
 	  "suppressImplicitAnyIndexErrors": true,
 	  "noUnusedLocals": true,
+	  "strict": true
 	},
 	"exclude": [
 		"test/*",

@@ -1,3 +1,5 @@
+/* eslint-disable sonarjs/no-duplicate-string */
+/* eslint-disable import/first */
 import * as dotenv from 'dotenv';
 dotenv.config();
 process.env.NODE_ENV = 'testing';

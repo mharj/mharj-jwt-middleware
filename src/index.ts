@@ -1,4 +1,3 @@
-export {useCache, FileCertCache} from 'mharj-jwt-util';
 import * as EventEmitter from 'events';
 import TypedEmitter from 'typed-emitter';
 import {Request, Response, NextFunction, RequestHandler} from 'express';
@@ -11,6 +10,7 @@ import {ErrorCallbackType} from './errors';
 import {isRoleOptions, JwtVerifyRoleOptions} from './interfaces/role';
 import {isGroupOptions, JwtVerifyGroupsOptions} from './interfaces/group';
 import {LoggerLike} from './interfaces/loggerLike';
+export {useCache, FileCertCache} from 'mharj-jwt-util';
 
 export type AadTokenBodyClaims = {
 	roles?: string[];
@@ -19,7 +19,7 @@ export type AadTokenBodyClaims = {
 
 type AadJwtResponse = JwtResponse<AadTokenBodyClaims>;
 
-type ValidatedCallback = (payload: AadJwtResponse, req: Request, res: Response) => void;
+type ValidatedCallback = (payload: AadJwtResponse, req: Request, res: Response) => Promise<void>;
 
 type JwtEvents = {
 	validated: (payload: AadJwtResponse, req: Request | undefined, res: Response | undefined) => void;
@@ -47,15 +47,27 @@ export class JwtMiddleware extends (EventEmitter as new () => TypedEmitter<JwtEv
 		this.options = options;
 		this.logger = logger;
 	}
+
 	public onRoleError(callback: ErrorCallbackType) {
 		this.roleErrorCallback = callback;
 	}
+
 	public onGroupError(callback: ErrorCallbackType) {
 		this.groupErrorCallback = callback;
 	}
+
+	/**
+	 * onOnValidated callback
+	 * @example
+	 * jwt.onValidated(async (payload, req, res) => {
+	 *   await isValidTenantId(payload.body.tid);
+	 *   res.locals.tokenBody = payload.body;
+	 * });
+	 */
 	public onValidated(callback: ValidatedCallback) {
 		this.validatedCallback = callback;
 	}
+
 	/**
 	 * Jwt Verify and if needed, role/group claim validation
 	 * @param token
@@ -88,6 +100,7 @@ export class JwtMiddleware extends (EventEmitter as new () => TypedEmitter<JwtEv
 		this.emit('validated', payload, req, res);
 		return payload;
 	}
+
 	/**
 	 * Express middleware to verify JWT and possible role or group claims from token
 	 * @param verifyOptions
@@ -107,7 +120,7 @@ export class JwtMiddleware extends (EventEmitter as new () => TypedEmitter<JwtEv
 				const payload = await jwtVerify<AadTokenBodyClaims>(req.headers.authorization, options);
 				if (isRoleOptions(verifyOptions)) {
 					if (this.haveRole(verifyOptions, payload)) {
-						this.handleValidLogin(payload, req, res);
+						await this.handleValidLogin(payload, req, res);
 						return next();
 					}
 					this.logger?.info(payload.body, 'not match with roles', verifyOptions.roles);
@@ -115,13 +128,13 @@ export class JwtMiddleware extends (EventEmitter as new () => TypedEmitter<JwtEv
 				}
 				if (isGroupOptions(verifyOptions)) {
 					if (this.haveGroup(verifyOptions, payload)) {
-						this.handleValidLogin(payload, req, res);
+						await this.handleValidLogin(payload, req, res);
 						return next();
 					}
 					this.logger?.info(payload.body, 'not match with groups', verifyOptions.groups);
 					return this.handleGroupError(payload, req, res, next);
 				}
-				this.handleValidLogin(payload, req, res);
+				await this.handleValidLogin(payload, req, res);
 				next();
 			} catch (err) {
 				next(err);
@@ -133,10 +146,12 @@ export class JwtMiddleware extends (EventEmitter as new () => TypedEmitter<JwtEv
 		const payloadRoles = payload.body?.roles || [];
 		return verifyOptions.roles.some((role) => payloadRoles.includes(role));
 	}
+
 	private haveGroup(verifyOptions: JwtVerifyGroupsOptions, payload: JwtResponse<AadTokenBodyClaims>): boolean {
 		const payloadGroups = payload.body?.groups || [];
 		return verifyOptions.groups.some((group) => payloadGroups.includes(group));
 	}
+
 	private handleRoleError(payload: AadJwtResponse, req: Request, res: Response, next: NextFunction) {
 		// if have custom callback
 		if (this.roleErrorCallback) {
@@ -145,6 +160,7 @@ export class JwtMiddleware extends (EventEmitter as new () => TypedEmitter<JwtEv
 			next(new JwtRoleError('no matching role'));
 		}
 	}
+
 	private handleGroupError(payload: AadJwtResponse, req: Request, res: Response, next: NextFunction) {
 		// if have custom callback
 		if (this.groupErrorCallback) {
@@ -153,12 +169,14 @@ export class JwtMiddleware extends (EventEmitter as new () => TypedEmitter<JwtEv
 			next(new JwtGroupError('no matching group'));
 		}
 	}
-	private handleValidLogin(payload: AadJwtResponse, req: Request, res: Response) {
+
+	private async handleValidLogin(payload: AadJwtResponse, req: Request, res: Response): Promise<void> {
 		if (this.validatedCallback) {
 			this.validatedCallback(payload, req, res);
 		}
 		this.emit('validated', payload, req, res);
 	}
+
 	private getOptions(): Promise<VerifyOptions> {
 		if (typeof this.options === 'function') {
 			return this.options();

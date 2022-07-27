@@ -1,7 +1,7 @@
-export {JwtGroupError} from './JwtGroupError';
-export {JwtRoleError} from './JwtRoleError';
 import {Request, Response, NextFunction} from 'express';
 import {JwtResponse} from 'mharj-jwt-util';
+export {JwtGroupError} from './JwtGroupError';
+export {JwtRoleError} from './JwtRoleError';
 
 export type ErrorCallbackType = (
 	payload: JwtResponse<{

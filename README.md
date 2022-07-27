@@ -72,6 +72,7 @@ Validation callback and event emitter for middleware
 // (optional) callback as example extend req to contain tokenBody
 jwt.onValidated(({isCached, body}, req: JwtRequest, res) => {
 	req.tokeBody = body;
+	return Promise.resolve(); // or async
 });
 
 // (optional) validated events with JWT payload, request and response, as example to log new tokens
