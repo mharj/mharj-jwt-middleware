@@ -1,15 +1,15 @@
 import * as EventEmitter from 'events';
-import TypedEmitter from 'typed-emitter';
-import {Request, Response, NextFunction, RequestHandler} from 'express';
+import {isGroupOptions, JwtVerifyGroupsOptions} from './interfaces/group';
+import {isRoleOptions, JwtVerifyRoleOptions} from './interfaces/role';
 import {JwtResponse, jwtVerify} from 'mharj-jwt-util';
-import {VerifyOptions} from 'jsonwebtoken';
+import {NextFunction, Request, RequestHandler, Response} from 'express';
+import {ErrorCallbackType} from './errors';
+import {ILoggerLike} from '@avanio/logger-like';
+import {JwtGroupError} from './errors/JwtGroupError';
 import {JwtHeaderError} from 'mharj-jwt-util/dist/JwtHeaderError';
 import {JwtRoleError} from './errors/JwtRoleError';
-import {JwtGroupError} from './errors/JwtGroupError';
-import {ErrorCallbackType} from './errors';
-import {isRoleOptions, JwtVerifyRoleOptions} from './interfaces/role';
-import {isGroupOptions, JwtVerifyGroupsOptions} from './interfaces/group';
-import {LoggerLike} from './interfaces/loggerLike';
+import TypedEmitter from 'typed-emitter';
+import {VerifyOptions} from 'jsonwebtoken';
 export {useCache, FileCertCache} from 'mharj-jwt-util';
 
 export type AadTokenBodyClaims = {
@@ -27,7 +27,7 @@ type JwtEvents = {
 
 type JwtVerifyOptions = JwtVerifyRoleOptions | JwtVerifyGroupsOptions;
 
-type JwtMiddlewareOptions = VerifyOptions | (() => Promise<VerifyOptions>);
+type JwtMiddlewareOptions = VerifyOptions | Promise<VerifyOptions> | (() => VerifyOptions | Promise<VerifyOptions>);
 
 /**
  * @example
@@ -41,8 +41,8 @@ export class JwtMiddleware extends (EventEmitter as new () => TypedEmitter<JwtEv
 	private roleErrorCallback: ErrorCallbackType | undefined;
 	private groupErrorCallback: ErrorCallbackType | undefined;
 	private validatedCallback: ValidatedCallback | undefined;
-	private logger: LoggerLike | undefined;
-	public constructor(options: JwtMiddlewareOptions = {}, logger?: LoggerLike) {
+	private logger: ILoggerLike | undefined;
+	public constructor(options: JwtMiddlewareOptions = {}, logger?: ILoggerLike) {
 		super();
 		this.options = options;
 		this.logger = logger;
@@ -177,10 +177,7 @@ export class JwtMiddleware extends (EventEmitter as new () => TypedEmitter<JwtEv
 		this.emit('validated', payload, req, res);
 	}
 
-	private getOptions(): Promise<VerifyOptions> {
-		if (typeof this.options === 'function') {
-			return this.options();
-		}
-		return Promise.resolve(this.options);
+	private getOptions(): VerifyOptions | Promise<VerifyOptions> {
+		return typeof this.options === 'function' ? this.options() : this.options;
 	}
 }
