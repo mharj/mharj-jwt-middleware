@@ -1,4 +1,4 @@
-import {Request, Response, NextFunction} from 'express';
+import {NextFunction, Request, Response} from 'express';
 import {JwtResponse} from 'mharj-jwt-util';
 export {JwtGroupError} from './JwtGroupError';
 export {JwtRoleError} from './JwtRoleError';
