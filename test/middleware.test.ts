@@ -7,7 +7,6 @@ import * as sinon from 'sinon';
 import {expect} from 'chai';
 import * as chai from 'chai';
 import * as chaiAsPromised from 'chai-as-promised';
-import 'cross-fetch/polyfill';
 import 'mocha';
 import {Request, Response, NextFunction} from 'express';
 import {JwtMiddleware, useCache, FileCertCache} from '../src';
@@ -15,18 +14,22 @@ import {startExpress, stopExpress} from './util/express';
 import {JwtGroupError} from '../src/errors/JwtGroupError';
 import {JwtRoleError} from '../src/errors/JwtRoleError';
 import {ErrorCallbackType} from '../src/errors';
+import {getDeveloperCredentials} from './util/aad';
+import {AccessToken} from '@azure/identity';
 
 const port = '12345';
 
 // tslint:disable: no-unused-expression
 chai.use(chaiAsPromised);
 
+let tokenResponse: AccessToken;
+
 let jwt: JwtMiddleware;
 let lastError: Error | undefined;
 
 describe('aadMiddleware', () => {
 	before(async function () {
-		this.timeout(30000);
+		this.timeout(60000);
 		useCache(new FileCertCache({fileName: '.certCache.json', pretty: true}));
 		jwt = new JwtMiddleware(() =>
 			Promise.resolve({issuer: `https://sts.windows.net/${process.env.AZURE_TENANT_ID}/`, audience: `${process.env.AZURE_API_AUDIENCE}`}),
@@ -64,6 +67,8 @@ describe('aadMiddleware', () => {
 			}
 			res.end();
 		});
+		const response = getDeveloperCredentials();
+		tokenResponse = await response.getToken([`${process.env.AZURE_API_AUDIENCE}/.default`]);
 	});
 	beforeEach(() => {
 		lastError = undefined;
@@ -76,20 +81,12 @@ describe('aadMiddleware', () => {
 			if (!process.env.VALID_GROUP) {
 				throw new Error('no VALID_GROUP set');
 			}
-			if (!process.env.ACCESS_TOKEN) {
-				throw new Error('no token found!');
-			}
-			await expect(jwt.verifyToken(process.env.ACCESS_TOKEN)).to.be.eventually.an('object');
-			await expect(jwt.verifyToken(process.env.ACCESS_TOKEN, {roles: [process.env.VALID_ROLE]})).to.be.eventually.an('object');
-			await expect(jwt.verifyToken(process.env.ACCESS_TOKEN, {groups: [process.env.VALID_GROUP]})).to.be.eventually.an('object');
-			await expect(jwt.verifyToken(process.env.ACCESS_TOKEN, {roles: ['THIS DOES NOT EXISTS']})).to.be.eventually.rejectedWith(
-				JwtRoleError,
-				'no matching role',
-			);
-			await expect(jwt.verifyToken(process.env.ACCESS_TOKEN, {groups: ['THIS DOES NOT EXISTS']})).to.be.eventually.rejectedWith(
-				JwtGroupError,
-				'no matching group',
-			);
+
+			await expect(jwt.verifyToken(tokenResponse.token)).to.be.eventually.an('object');
+			await expect(jwt.verifyToken(tokenResponse.token, {roles: [process.env.VALID_ROLE]})).to.be.eventually.an('object');
+			await expect(jwt.verifyToken(tokenResponse.token, {groups: [process.env.VALID_GROUP]})).to.be.eventually.an('object');
+			await expect(jwt.verifyToken(tokenResponse.token, {roles: ['THIS DOES NOT EXISTS']})).to.be.eventually.rejectedWith(JwtRoleError, 'no matching role');
+			await expect(jwt.verifyToken(tokenResponse.token, {groups: ['THIS DOES NOT EXISTS']})).to.be.eventually.rejectedWith(JwtGroupError, 'no matching group');
 		});
 	});
 	describe('basic errors', () => {
@@ -111,75 +108,54 @@ describe('aadMiddleware', () => {
 	describe('jwtVerifyPromise', () => {
 		it('should have valid role in token', async function () {
 			this.timeout(30000);
-			if (!process.env.ACCESS_TOKEN) {
-				throw new Error('no token found!');
-			}
 			const headers = new Headers();
-			headers.set('Authorization', `Bearer ${process.env.ACCESS_TOKEN}`);
+			headers.set('Authorization', `Bearer ${tokenResponse.token}`);
 			const res = await fetch(`http://localhost:${port}/unit1`, {headers});
 			expect(res.status).to.be.eq(200);
 		});
 		it('should have valid group in token', async function () {
 			this.timeout(30000);
-			if (!process.env.ACCESS_TOKEN) {
-				throw new Error('no token found!');
-			}
 			const headers = new Headers();
-			headers.set('Authorization', `Bearer ${process.env.ACCESS_TOKEN}`);
+			headers.set('Authorization', `Bearer ${tokenResponse.token}`);
 			const res = await fetch(`http://localhost:${port}/unit2`, {headers});
 			expect(res.status).to.be.eq(200);
 		});
 		it('should not have valid role in token', async function () {
 			this.timeout(30000);
-			if (!process.env.ACCESS_TOKEN) {
-				throw new Error('no token found!');
-			}
 			const headers = new Headers();
-			headers.set('Authorization', `Bearer ${process.env.ACCESS_TOKEN}`);
+			headers.set('Authorization', `Bearer ${tokenResponse.token}`);
 			const res = await fetch(`http://localhost:${port}/unit3`, {headers});
 			expect(res.status).to.be.eq(401);
 		});
 		it('should not have valid group in token', async function () {
 			this.timeout(30000);
-			if (!process.env.ACCESS_TOKEN) {
-				throw new Error('no token found!');
-			}
 			const headers = new Headers();
-			headers.set('Authorization', `Bearer ${process.env.ACCESS_TOKEN}`);
+			headers.set('Authorization', `Bearer ${tokenResponse.token}`);
 			const res = await fetch(`http://localhost:${port}/unit4`, {headers});
 			expect(res.status).to.be.eq(401);
 		});
 		it('should have valid token without role or group check', async function () {
 			this.timeout(30000);
-			if (!process.env.ACCESS_TOKEN) {
-				throw new Error('no token found!');
-			}
 			const headers = new Headers();
-			headers.set('Authorization', `Bearer ${process.env.ACCESS_TOKEN}`);
+			headers.set('Authorization', `Bearer ${tokenResponse.token}`);
 			const res = await fetch(`http://localhost:${port}/unit5`, {headers});
 			expect(res.status).to.be.eq(200);
 		});
 		it('should trigger event then login', async function () {
-			if (!process.env.ACCESS_TOKEN) {
-				throw new Error('no token found!');
-			}
 			const emitSpy = sinon.spy();
 			jwt.on('validated', emitSpy);
 			const headers = new Headers();
-			headers.set('Authorization', `Bearer ${process.env.ACCESS_TOKEN}`);
+			headers.set('Authorization', `Bearer ${tokenResponse.token}`);
 			const res = await fetch(`http://localhost:${port}/unit2`, {headers});
 			expect(res.status).to.be.eq(200);
 			expect(emitSpy.calledOnce).to.be.eq(true);
 			jwt.removeAllListeners();
 		});
 		it('should trigger onValidated then login', async function () {
-			if (!process.env.ACCESS_TOKEN) {
-				throw new Error('no token found!');
-			}
 			const emitSpy = sinon.spy();
 			jwt.onValidated(emitSpy);
 			const headers = new Headers();
-			headers.set('Authorization', `Bearer ${process.env.ACCESS_TOKEN}`);
+			headers.set('Authorization', `Bearer ${tokenResponse.token}`);
 			const res = await fetch(`http://localhost:${port}/unit2`, {headers});
 			expect(res.status).to.be.eq(200);
 			expect(emitSpy.calledOnce).to.be.eq(true);
@@ -189,13 +165,10 @@ describe('aadMiddleware', () => {
 	describe('onRoleError', () => {
 		it('should not have valid role in token', async function () {
 			this.timeout(30000);
-			if (!process.env.ACCESS_TOKEN) {
-				throw new Error('no token found!');
-			}
 			const emitSpy = sinon.spy<ErrorCallbackType>((payload, req, res) => res.status(401).end());
 			jwt.onRoleError(emitSpy);
 			const headers = new Headers();
-			headers.set('Authorization', `Bearer ${process.env.ACCESS_TOKEN}`);
+			headers.set('Authorization', `Bearer ${tokenResponse.token}`);
 			const res = await fetch(`http://localhost:${port}/unit3`, {headers});
 			expect(res.status).to.be.eq(401);
 			expect(emitSpy.calledOnce).to.be.eq(true);
@@ -204,13 +177,10 @@ describe('aadMiddleware', () => {
 	describe('onGroupError', () => {
 		it('should not have valid role in token', async function () {
 			this.timeout(30000);
-			if (!process.env.ACCESS_TOKEN) {
-				throw new Error('no token found!');
-			}
 			const emitSpy = sinon.spy<ErrorCallbackType>((payload, req, res) => res.status(401).end());
 			jwt.onGroupError(emitSpy);
 			const headers = new Headers();
-			headers.set('Authorization', `Bearer ${process.env.ACCESS_TOKEN}`);
+			headers.set('Authorization', `Bearer ${tokenResponse.token}`);
 			const res = await fetch(`http://localhost:${port}/unit4`, {headers});
 			expect(res.status).to.be.eq(401);
 			expect(emitSpy.calledOnce).to.be.eq(true);
