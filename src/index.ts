@@ -102,7 +102,7 @@ export class JwtMiddleware extends (EventEmitter as new () => TypedEmitter<JwtEv
 	}
 
 	/**
-	 * Express middleware to verify JWT and possible role or group claims from token
+	 * Express middleware to verify JWT from authorization header and possible role or group claims from token
 	 * @param verifyOptions
 	 * @param {string[]} verifyOptions.roles valid roles from JWT role claim (i.e. Application Roles)
 	 * @param {string[]} verifyOptions.groups valid groups from JWT groups claim (expose group claims, App registrations => Token Configuration => Add groups claim)
