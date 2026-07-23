@@ -26,10 +26,7 @@
   "files": [
     "dist"
   ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/mharj/mharj-jwt-middleware.git"
-  },
+  "repository": "github:mharj/mharj-jwt-middleware",
   "keywords": [
     "jwt",
     "jsonwebtoken",
