@@ -1,14 +1,4 @@
-import {NextFunction, Request, Response} from 'express';
-import {JwtResponse} from 'mharj-jwt-util';
-export {JwtGroupError} from './JwtGroupError';
-export {JwtRoleError} from './JwtRoleError';
+export * from './JwtGroupError';
+export * from './JwtRoleError';
+export * from './ErrorCallbackType';
 
-export type ErrorCallbackType = (
-	payload: JwtResponse<{
-		roles?: string[];
-		groups?: string[];
-	}>,
-	req: Request,
-	res: Response,
-	next: NextFunction,
-) => void;

@@ -1,5 +1,5 @@
 import {Server} from 'http';
-import * as express from 'express';
+import express from 'express';
 
 let server: undefined | Server;
 

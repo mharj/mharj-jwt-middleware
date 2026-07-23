@@ -1,16 +1,13 @@
-import * as EventEmitter from 'events';
-import {isGroupOptions, JwtVerifyGroupsOptions} from './interfaces/group';
-import {isRoleOptions, JwtVerifyRoleOptions} from './interfaces/role';
-import {JwtResponse, jwtVerify} from 'mharj-jwt-util';
-import {NextFunction, Request, RequestHandler, Response} from 'express';
-import {ErrorCallbackType} from './errors';
-import {ILoggerLike} from '@avanio/logger-like';
+import {EventEmitter} from 'node:events';
+import type {ILoggerLike} from '@avanio/logger-like';
+import {JwtHeaderError, type JwtResponse, jwtVerify} from '@luolapeikko/oidc-jwt-verify';
+import type {NextFunction, Request, RequestHandler, Response} from 'express';
+import type {VerifyOptions} from 'jsonwebtoken';
+import type {ErrorCallbackType} from './errors/ErrorCallbackType';
 import {JwtGroupError} from './errors/JwtGroupError';
-import {JwtHeaderError} from 'mharj-jwt-util/dist/JwtHeaderError';
 import {JwtRoleError} from './errors/JwtRoleError';
-import TypedEmitter from 'typed-emitter';
-import {VerifyOptions} from 'jsonwebtoken';
-export {useCache, FileCertCache} from 'mharj-jwt-util';
+import {isGroupOptions, type JwtVerifyGroupsOptions} from './interfaces/group';
+import {isRoleOptions, type JwtVerifyRoleOptions} from './interfaces/role';
 
 export type AadTokenBodyClaims = {
 	roles?: string[];
@@ -22,7 +19,7 @@ type AadJwtResponse = JwtResponse<AadTokenBodyClaims>;
 type ValidatedCallback = (payload: AadJwtResponse, req: Request, res: Response) => Promise<void>;
 
 type JwtEvents = {
-	validated: (payload: AadJwtResponse, req: Request | undefined, res: Response | undefined) => void;
+	validated: [payload: AadJwtResponse, req: Request | undefined, res: Response | undefined];
 };
 
 type JwtVerifyOptions = JwtVerifyRoleOptions | JwtVerifyGroupsOptions;
@@ -36,7 +33,7 @@ type JwtMiddlewareOptions = VerifyOptions | Promise<VerifyOptions> | (() => Veri
  *   audience: `${process.env.AZURE_API_AUDIENCE}`,
  * });
  */
-export class JwtMiddleware extends (EventEmitter as new () => TypedEmitter<JwtEvents>) {
+export class JwtMiddleware extends EventEmitter<JwtEvents> {
 	private options: JwtMiddlewareOptions;
 	private roleErrorCallback: ErrorCallbackType | undefined;
 	private groupErrorCallback: ErrorCallbackType | undefined;

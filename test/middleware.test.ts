@@ -1,36 +1,34 @@
-/* eslint-disable sonarjs/no-duplicate-string */
-/* eslint-disable import/first */
+import {describe, it, beforeAll, beforeEach, expect, afterAll, vi} from 'vitest';
+import {z} from 'zod';
 import * as dotenv from 'dotenv';
-dotenv.config();
-process.env.NODE_ENV = 'testing';
-import * as sinon from 'sinon';
-import {expect} from 'chai';
-import * as chai from 'chai';
-import * as chaiAsPromised from 'chai-as-promised';
-import 'mocha';
 import {Request, Response, NextFunction} from 'express';
-import {JwtMiddleware, useCache, FileCertCache} from '../src';
+import {useCache, FileCertCache, type CertRecordsSchema} from '@luolapeikko/oidc-jwt-verify';
 import {startExpress, stopExpress} from './util/express';
 import {JwtGroupError} from '../src/errors/JwtGroupError';
 import {JwtRoleError} from '../src/errors/JwtRoleError';
-import {ErrorCallbackType} from '../src/errors';
+import {ErrorCallbackType} from '../src/errors/ErrorCallbackType';
 import {getDeveloperCredentials} from './util/aad';
 import {AccessToken} from '@azure/identity';
+import {JwtMiddleware} from '../src';
+
+dotenv.config();
 
 const port = '12345';
 
-// tslint:disable: no-unused-expression
-chai.use(chaiAsPromised);
+const certCacheSchema = z.object({certs: z.record(z.string(), z.record(z.string(), z.string())), _ts: z.number()}) satisfies CertRecordsSchema;
 
 let tokenResponse: AccessToken;
 
 let jwt: JwtMiddleware;
 let lastError: Error | undefined;
 
+const emitValidatedSpy = vi.fn();
+const emitRoleErrorSpy = vi.fn<ErrorCallbackType>((payload, req, res) => res.status(401).end());
+const emitGroupErrorSpy = vi.fn<ErrorCallbackType>((payload, req, res) => res.status(401).end());
+
 describe('aadMiddleware', () => {
-	before(async function () {
-		this.timeout(60000);
-		useCache(new FileCertCache({fileName: '.certCache.json', pretty: true}));
+	beforeAll(async function () {
+		useCache(new FileCertCache({fileName: '.certCache.json', schema: certCacheSchema, pretty: true}));
 		jwt = new JwtMiddleware(() =>
 			Promise.resolve({issuer: `https://sts.windows.net/${process.env.AZURE_TENANT_ID}/`, audience: `${process.env.AZURE_API_AUDIENCE}`}),
 		);
@@ -69,9 +67,12 @@ describe('aadMiddleware', () => {
 		});
 		const response = getDeveloperCredentials();
 		tokenResponse = await response.getToken([`${process.env.AZURE_API_AUDIENCE}/.default`]);
-	});
+	}, 60000);
 	beforeEach(() => {
 		lastError = undefined;
+		emitValidatedSpy.mockClear();
+		emitRoleErrorSpy.mockClear();
+		emitGroupErrorSpy.mockClear();
 	});
 	describe('token validation', () => {
 		it('should handle different role and group validations', async function () {
@@ -81,113 +82,100 @@ describe('aadMiddleware', () => {
 			if (!process.env.VALID_GROUP) {
 				throw new Error('no VALID_GROUP set');
 			}
-
-			await expect(jwt.verifyToken(tokenResponse.token)).to.be.eventually.an('object');
-			await expect(jwt.verifyToken(tokenResponse.token, {roles: [process.env.VALID_ROLE]})).to.be.eventually.an('object');
-			await expect(jwt.verifyToken(tokenResponse.token, {groups: [process.env.VALID_GROUP]})).to.be.eventually.an('object');
-			await expect(jwt.verifyToken(tokenResponse.token, {roles: ['THIS DOES NOT EXISTS']})).to.be.eventually.rejectedWith(JwtRoleError, 'no matching role');
-			await expect(jwt.verifyToken(tokenResponse.token, {groups: ['THIS DOES NOT EXISTS']})).to.be.eventually.rejectedWith(JwtGroupError, 'no matching group');
+			await jwt.verifyToken(tokenResponse.token);
+			console.log('tokenResponse', tokenResponse);
+			await expect(jwt.verifyToken(tokenResponse.token)).resolves.an('object');
+			await expect(jwt.verifyToken(tokenResponse.token, {roles: [process.env.VALID_ROLE]})).resolves.an('object');
+			await expect(jwt.verifyToken(tokenResponse.token, {groups: [process.env.VALID_GROUP]})).resolves.an('object');
+			await expect(jwt.verifyToken(tokenResponse.token, {roles: ['THIS DOES NOT EXISTS']})).rejects.toThrow(JwtRoleError);
+			await expect(jwt.verifyToken(tokenResponse.token, {groups: ['THIS DOES NOT EXISTS']})).rejects.toThrow(JwtGroupError);
 		});
 	});
 	describe('basic errors', () => {
 		it('should fail if no auth header', async function () {
-			this.timeout(30000);
 			const res = await fetch(`http://localhost:${port}/unit1`);
 			expect(res.status).to.be.eq(500);
 			expect(lastError?.message).to.be.eq('no authorization header');
 		});
 		it('should fail if wrong type auth header', async function () {
-			this.timeout(30000);
 			const headers = new Headers();
 			headers.set('Authorization', `Basic asd:qwe`);
 			const res = await fetch(`http://localhost:${port}/unit1`, {headers});
 			expect(res.status).to.be.eq(500);
-			expect(lastError?.message).to.be.eq('token header: wrong authentication header type');
+			expect(lastError?.message).to.be.eq('token header: Not JWT token string format');
 		});
 	});
 	describe('jwtVerifyPromise', () => {
 		it('should have valid role in token', async function () {
-			this.timeout(30000);
 			const headers = new Headers();
 			headers.set('Authorization', `Bearer ${tokenResponse.token}`);
 			const res = await fetch(`http://localhost:${port}/unit1`, {headers});
 			expect(res.status).to.be.eq(200);
 		});
 		it('should have valid group in token', async function () {
-			this.timeout(30000);
 			const headers = new Headers();
 			headers.set('Authorization', `Bearer ${tokenResponse.token}`);
 			const res = await fetch(`http://localhost:${port}/unit2`, {headers});
 			expect(res.status).to.be.eq(200);
 		});
 		it('should not have valid role in token', async function () {
-			this.timeout(30000);
 			const headers = new Headers();
 			headers.set('Authorization', `Bearer ${tokenResponse.token}`);
 			const res = await fetch(`http://localhost:${port}/unit3`, {headers});
 			expect(res.status).to.be.eq(401);
 		});
 		it('should not have valid group in token', async function () {
-			this.timeout(30000);
 			const headers = new Headers();
 			headers.set('Authorization', `Bearer ${tokenResponse.token}`);
 			const res = await fetch(`http://localhost:${port}/unit4`, {headers});
 			expect(res.status).to.be.eq(401);
 		});
 		it('should have valid token without role or group check', async function () {
-			this.timeout(30000);
 			const headers = new Headers();
 			headers.set('Authorization', `Bearer ${tokenResponse.token}`);
 			const res = await fetch(`http://localhost:${port}/unit5`, {headers});
 			expect(res.status).to.be.eq(200);
 		});
 		it('should trigger event then login', async function () {
-			const emitSpy = sinon.spy();
-			jwt.on('validated', emitSpy);
+			jwt.on('validated', emitValidatedSpy);
 			const headers = new Headers();
 			headers.set('Authorization', `Bearer ${tokenResponse.token}`);
 			const res = await fetch(`http://localhost:${port}/unit2`, {headers});
 			expect(res.status).to.be.eq(200);
-			expect(emitSpy.calledOnce).to.be.eq(true);
+			expect(emitValidatedSpy).toHaveBeenCalledOnce();
 			jwt.removeAllListeners();
 		});
 		it('should trigger onValidated then login', async function () {
-			const emitSpy = sinon.spy();
-			jwt.onValidated(emitSpy);
+			jwt.onValidated(emitValidatedSpy);
 			const headers = new Headers();
 			headers.set('Authorization', `Bearer ${tokenResponse.token}`);
 			const res = await fetch(`http://localhost:${port}/unit2`, {headers});
 			expect(res.status).to.be.eq(200);
-			expect(emitSpy.calledOnce).to.be.eq(true);
+			expect(emitValidatedSpy).toHaveBeenCalledOnce();
 			jwt.removeAllListeners();
 		});
 	});
 	describe('onRoleError', () => {
 		it('should not have valid role in token', async function () {
-			this.timeout(30000);
-			const emitSpy = sinon.spy<ErrorCallbackType>((payload, req, res) => res.status(401).end());
-			jwt.onRoleError(emitSpy);
+			jwt.onRoleError(emitRoleErrorSpy);
 			const headers = new Headers();
 			headers.set('Authorization', `Bearer ${tokenResponse.token}`);
 			const res = await fetch(`http://localhost:${port}/unit3`, {headers});
 			expect(res.status).to.be.eq(401);
-			expect(emitSpy.calledOnce).to.be.eq(true);
+			expect(emitRoleErrorSpy).toHaveBeenCalledOnce();
 		});
 	});
 	describe('onGroupError', () => {
 		it('should not have valid role in token', async function () {
-			this.timeout(30000);
-			const emitSpy = sinon.spy<ErrorCallbackType>((payload, req, res) => res.status(401).end());
-			jwt.onGroupError(emitSpy);
+			jwt.onGroupError(emitGroupErrorSpy);
 			const headers = new Headers();
 			headers.set('Authorization', `Bearer ${tokenResponse.token}`);
 			const res = await fetch(`http://localhost:${port}/unit4`, {headers});
 			expect(res.status).to.be.eq(401);
-			expect(emitSpy.calledOnce).to.be.eq(true);
+			expect(emitGroupErrorSpy).toHaveBeenCalledOnce();
 		});
 	});
-	after(async function () {
-		this.timeout(30000);
+	afterAll(async function () {
 		await stopExpress();
 	});
 });
