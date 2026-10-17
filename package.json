@@ -46,7 +46,7 @@
     "@azure/identity": "^4.13.3",
     "@azure/identity-vscode": "^2.2.2",
     "@biomejs/biome": "^2.5.15",
-    "@luolapeikko/oidc-jwt-verify": "^0.1.4",
+    "@luolapeikko/oidc-jwt-verify": "^0.2.0",
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.6.4",
